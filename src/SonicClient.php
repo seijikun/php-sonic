@@ -185,7 +185,6 @@ abstract class AbstractSonicSessionBase {
 		}
 		$arguments = $response->asArgumentList(1);
 		$this->receiveBufferSize = $arguments->getArgumentInt('buffer', 8192);
-		var_dump($arguments->getArgumentInt('protocol', -1));
 		if($arguments->getArgumentInt('protocol', -1) != 1) {
 			throw new SonicProtocolError("Sonic instance announced unsupported protocol version.");
 		}
@@ -274,7 +273,7 @@ abstract class AbstractSonicSessionBase {
 	public function ping() {
 		$pingMessage = new SonicMessage(['PING']);
 		$response = $this->sendAndAwaitResponse($pingMessage);
-		if($response->getVerb() != 'PONG'); {
+		if($response->getVerb() != 'PONG') {
 			throw new SonicCommandFailedException($pingMessage, $response);
 		}
 	}
