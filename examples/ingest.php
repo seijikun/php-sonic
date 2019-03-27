@@ -1,6 +1,7 @@
 <?php
 
 include "../src/SonicClient.php";
+define('__SONIC_CLIENT_DEBUG__', true);
 
 $client = new SonicIngestSession('localhost', 1491, 'SecretPassword');
 try {

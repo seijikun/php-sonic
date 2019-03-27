@@ -215,7 +215,7 @@ abstract class AbstractSonicSessionBase {
 		$messageStr = $message->serialize() . "\n";
 		$result = fputs($this->socket, $messageStr);
 		if($result === false) { throw new SonicConnectionLostException(""); }
-		echo("[SENT]: " . $messageStr);
+		if(defined('__SONIC_CLIENT_DEBUG__') && __SONIC_CLIENT_DEBUG__) { echo("[SENT]: " . $messageStr); }
 	}
 	
 	/**
@@ -225,7 +225,7 @@ abstract class AbstractSonicSessionBase {
 	 */
 	protected function readResponse() : SonicMessage {
 		$response = stream_get_line($this->socket, $this->receiveBufferSize, "\n");
-		echo("[RECV]: " . $response . "\n");
+		if(defined('__SONIC_CLIENT_DEBUG__') && __SONIC_CLIENT_DEBUG__) { echo("[RECV]: " . $response . "\n"); }
 		if($response === false) { throw new SonicConnectionLostException(""); }
 		return SonicMessage::fromStr($response);
 	}
@@ -445,6 +445,31 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 			throw new SonicCommandFailedException($suggestMessage, $suggestResult);
 		}
 		return $suggestResult->asArray(2);
+	}
+	
+};
+
+/**
+ * Sonic session implementation for Sonic's control mode.
+ */
+class SonicControlSession extends AbstractSonicSessionBase {
+
+	public function __construct(string $host, int $port, string $password) {
+		parent::__construct($host, $port, $password, 'control');
+	}
+
+	/**
+	 * Trigger the given action.
+	 * @param action string The action to triger.
+	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 */
+	public function trigger(string $action) {
+		$triggerMessage = new SonicMessage(['TRIGGER', $action]);
+		$response = $this->sendAndAwaitResponse($triggerMessage);
+		if($response->getVerb() != 'OK') {
+			throw new SonicCommandFailedException($suggestMessage, $suggestResult);
+		}
 	}
 	
 };
