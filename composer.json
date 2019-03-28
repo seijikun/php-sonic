@@ -7,8 +7,6 @@
     "keywords": ["sonic", "fulltext", "fulltextsearch", "search"],
     "require": { },
     "autoload": {
-        "psr-4": {
-            "SonicSearch\\": "src/"
-        }
+	"files": ["src/SonicSearch.php"]
     }
 }
