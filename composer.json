@@ -1,0 +1,14 @@
+{
+    "name": "seijikun/php-sonic",
+    "type": "library",
+    "description": "PHP client for the Sonic fulltext search engine",
+    "version": "0.0.1",
+    "license": "MPL-2.0",
+    "keywords": ["sonic", "fulltext", "fulltextsearch", "search"],
+    "require": { },
+    "autoload": {
+        "psr-4": {
+            "SonicSearch\\": "src/"
+        }
+    }
+}
