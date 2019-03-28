@@ -1,17 +1,19 @@
 <?php
 
-abstract class SonicException extends Exception {};
+namespace SonicSearch;
+
+abstract class SonicException extends \Exception {};
 class SonicUnreachableException extends SonicException {
 	public function __construct($errno, $errmsg) {
 		parent::__construct("Could not connect to Sonic [$errno]: $errmsg");
 	}
 };
-class SonicAuthenticationRequiredException extends SonicException {};
-class SonicAuthenticationFailedException extends SonicException {};
-class SonicProtocolError extends SonicException {};
-class SonicConnectionLostException extends SonicException {};
-class SonicModeChangeFailed extends SonicException {};
-class SonicCommandFailedException extends SonicException {
+class AuthenticationRequiredException extends SonicException {};
+class AuthenticationFailedException extends SonicException {};
+class ProtocolError extends SonicException {};
+class ConnectionLostException extends SonicException {};
+class ModeChangeFailed extends SonicException {};
+class CommandFailedException extends SonicException {
 	public function __construct(SonicMessage &$request, SonicMessage &$response) {
 		parent::__construct("Request: ". $request->serialize() .
 							" failed:\nResponse: ". $response->serialize() . "\n");
@@ -127,7 +129,7 @@ class SonicArgumentList {
  * Base class for Sonic sessions. This class should be overloaded once per possible mode/session.
  * There, for example, are overloads for Search and Ingest.
  */
-abstract class AbstractSonicSessionBase {
+abstract class AbstractSessionBase {
 
 	private $host;
 	private $port;
@@ -156,10 +158,10 @@ abstract class AbstractSonicSessionBase {
 	/**
 	 * Connect to the Sonic-Server and switch to the corresponding session mode.
 	 * @throws SonicUnreachableException If connecting to the sonic instance failed.
-	 * @throws SonicAuthenticationRequiredException If no password was given, but Sonic required one.
-	 * @throws SonicAuthenticationFailedException If the given password was wrong.
-	 * @throws SonicModeChangeFailed Switching to the corresponding mode failed (for which reason ever).
-	 * @throws SonicProtocolError If Sonic misbehaved or announced an unsupported protocol version.
+	 * @throws AuthenticationRequiredException If no password was given, but Sonic required one.
+	 * @throws AuthenticationFailedException If the given password was wrong.
+	 * @throws ModeChangeFailed Switching to the corresponding mode failed (for which reason ever).
+	 * @throws ProtocolError If Sonic misbehaved or announced an unsupported protocol version.
 	 */
 	public function connect() {
 		// Connect and parse greeting from Sonic
@@ -170,23 +172,23 @@ abstract class AbstractSonicSessionBase {
 			if(!$this->socket) { throw new SonicUnreachableException($errno, $errmsg); }
 		}
 		$helloMessage = $this->readResponse();
-		if($helloMessage->getVerb() != 'CONNECTED') { throw new SonicProtocolError("Sonic did not greet us."); }
+		if($helloMessage->getVerb() != 'CONNECTED') { throw new ProtocolError("Sonic did not greet us."); }
 		
 		// Start session
 		$response = $this->sendAndAwaitResponse(new SonicMessage(['START', $this->mode, $this->password]));
 		if($response->getVerb() != 'STARTED') {
 			$reason = $response->getArgument(0);
 			if($reason == 'authentication_required') {
-				throw new SonicAuthenticationRequiredException("");
+				throw new AuthenticationRequiredException("");
 			} else if($reason == 'authentication_failed') {
-				throw new SonicAuthenticationFailedException("");
+				throw new AuthenticationFailedException("");
 			}
-			throw new SonicModeChangeFailed("Sonic Mode-Change failed: ". $response->serialize());
+			throw new ModeChangeFailed("Sonic Mode-Change failed: ". $response->serialize());
 		}
 		$arguments = $response->asArgumentList(1);
 		$this->receiveBufferSize = $arguments->getArgumentInt('buffer', 8192);
 		if($arguments->getArgumentInt('protocol', -1) != 1) {
-			throw new SonicProtocolError("Sonic instance announced unsupported protocol version.");
+			throw new ProtocolError("Sonic instance announced unsupported protocol version.");
 		}
 	}
 	
@@ -199,7 +201,7 @@ abstract class AbstractSonicSessionBase {
 	 * Send the given message and directly await and parse Sonic's response to it.
 	 * @param SonicMessage message The message to send to Sonic.
 	 * @return SonicMessage The parsed message Sonic sent us.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
 	 */
 	protected function sendAndAwaitResponse(SonicMessage $message) : SonicMessage {
 		$this->sendMessage($message);
@@ -209,24 +211,24 @@ abstract class AbstractSonicSessionBase {
 	/**
 	 * Send the given message to Sonic.
 	 * @param SonicMessage message The message to send to Sonic.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
 	 */
 	protected function sendMessage(SonicMessage $message) {
 		$messageStr = $message->serialize() . "\n";
 		$result = fputs($this->socket, $messageStr);
-		if($result === false) { throw new SonicConnectionLostException(""); }
+		if($result === false) { throw new ConnectionLostException(""); }
 		if(defined('__SONIC_CLIENT_DEBUG__') && __SONIC_CLIENT_DEBUG__) { echo("[SENT]: " . $messageStr); }
 	}
 	
 	/**
 	 * Read one response line from the connection to Sonic.
 	 * @return SonicMessage The parsed message Sonic sent us.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
 	 */
 	protected function readResponse() : SonicMessage {
 		$response = stream_get_line($this->socket, $this->receiveBufferSize, "\n");
 		if(defined('__SONIC_CLIENT_DEBUG__') && __SONIC_CLIENT_DEBUG__) { echo("[RECV]: " . $response . "\n"); }
-		if($response === false) { throw new SonicConnectionLostException(""); }
+		if($response === false) { throw new ConnectionLostException(""); }
 		return SonicMessage::fromStr($response);
 	}
 	
@@ -267,14 +269,14 @@ abstract class AbstractSonicSessionBase {
 	
 	/**
 	 * Ping the Sonic server and await its pong response.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function ping() {
 		$pingMessage = new SonicMessage(['PING']);
 		$response = $this->sendAndAwaitResponse($pingMessage);
 		if($response->getVerb() != 'PONG') {
-			throw new SonicCommandFailedException($pingMessage, $response);
+			throw new CommandFailedException($pingMessage, $response);
 		}
 	}
 
@@ -283,7 +285,7 @@ abstract class AbstractSonicSessionBase {
 /**
  * Sonic session implementation for Sonic's ingest mode.
  */
-class SonicIngestSession extends AbstractSonicSessionBase {
+class IngestSession extends AbstractSessionBase {
 
 	public function __construct(string $host, int $port, string $password) {
 		parent::__construct($host, $port, $password, 'ingest');
@@ -294,8 +296,8 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 	 * @param collection string Collection within Sonic to push the given terms into.
 	 * @param bucket string Optional bucket within the collection to push the given terms into.
 	 * @param object string Optional object within the given bucket to push the given terms into.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function push(string $collection, string $bucket, string $object, string $terms) {
 		$pushMessageTemplate = new SonicMessage([ 'PUSH', $collection, $bucket, $object ]);
@@ -305,7 +307,7 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 			$pushChunkMessage->setArgument(3, SonicMessage::quoted($valueChunk));
 			$response = $this->sendAndAwaitResponse($pushChunkMessage);
 			if($response->getVerb() != 'OK') {
-				throw new SonicCommandFailedException($pushChunkMessage, $response);
+				throw new CommandFailedException($pushChunkMessage, $response);
 			}
 		}
 	}
@@ -315,8 +317,8 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 	 * @param collection string Collection within Sonic to pop-search the given terms from.
 	 * @param bucket string Optional bucket within the collection to pop-search the given terms from.
 	 * @param object string Optional object within the given bucket to pop-search the given terms from.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function pop(string $collection, string $bucket, string $object, string $terms) : int {
 		$result = 0;
@@ -327,7 +329,7 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 			$popChunkMessage->setArgument(3, SonicMessage::quoted($valueChunk));
 			$response = $this->sendMessage($popChunkMessage);
 			if($response->getVerb() != 'RESULT') {
-				throw new SonicCommandFailedException($popChunkMessage, $response);
+				throw new CommandFailedException($popChunkMessage, $response);
 			}
 			$result += $response->getArgumentInt(0);
 		}
@@ -339,8 +341,8 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 	 * @param collection string Collection within Sonic to count terms in.
 	 * @param bucket string Optional bucket within the collection to count terms in.
 	 * @param object string Optional object within the given bucket to count terms in.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function count(string $collection, string $bucket = null, string $object = null) : int {
 		$countMessage = new SonicMessage(['COUNT', $collection]);
@@ -350,7 +352,7 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 		}
 		$response = $this->sendAndAwaitResponse($countMessage);
 		if($response->getVerb() != 'RESULT') {
-			throw new SonicCommandFailedException($countMessage, $response);
+			throw new CommandFailedException($countMessage, $response);
 		}
 		return $response->getArgumentInt(0);
 	}
@@ -360,8 +362,8 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 	 * @param collection string Collection within Sonic to flush.
 	 * @param bucket string Optional bucket within the collection to flush.
 	 * @param object string Optional object within the given bucket to flush.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function flush(string $collection, string $bucket = null, string $object = null) : int {
 		$flushOp = 'FLUSHC';
@@ -378,7 +380,7 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 		$flushMessage->setVerb($flushOp);
 		$response = $this->sendAndAwaitResponse($flushMessage);
 		if($response->getVerb() != 'RESULT') {
-			throw new SonicCommandFailedException($flushMessage, $response);
+			throw new CommandFailedException($flushMessage, $response);
 		}
 		return $response->getArgumentInt(0);
 	}
@@ -387,7 +389,7 @@ class SonicIngestSession extends AbstractSonicSessionBase {
 /**
  * Sonic session implementation for Sonic's search mode.
  */
-class SonicSearchSession extends AbstractSonicSessionBase {
+class SearchSession extends AbstractSessionBase {
 
 	public function __construct(string $host, int $port, string $password) {
 		parent::__construct($host, $port, $password, 'search');
@@ -400,8 +402,8 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 	 * @param terms string A search string containing multiple words to query the given bucket for.
 	 * @param limit int Optional limit to the amount of returned search results.
 	 * @param offset int Optional offset in the pagination of search-results introduced by the limit.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function query(string $collection, string $bucket, string $terms, int $limit = null, int $offset = null) : array {
 		$terms = SonicMessage::sanitizeValue($terms);
@@ -412,11 +414,11 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 		if($offset != null) { $queryMessage->setArgumentKeyVal($queryMessage->argumentCnt(), 'OFFSET', $offset); }
 		$response = $this->sendAndAwaitResponse($queryMessage);
 		if($response->getVerb() != 'PENDING') {
-			throw new SonicCommandFailedException($queryMessage, $response);
+			throw new CommandFailedException($queryMessage, $response);
 		}
 		$searchResult = $this->readResponse();
 		if($searchResult->getVerb() != 'EVENT' && $searchResult->getArgument(0) != 'QUERY') {
-			throw new SonicCommandFailedException($queryMessage, $searchResult);
+			throw new CommandFailedException($queryMessage, $searchResult);
 		}
 		return $searchResult->asArray(2);
 	}
@@ -427,8 +429,8 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 	 * @param bucket string Bucket within the collection to search for suggestions in.
 	 * @param word Beginning of the word to request completions for.
 	 * @param limit int Optional limit to the amount of returned suggestions.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function suggest(string $collection, string $bucket, string $word, int $limit = null) : array {
 		$word = SonicMessage::sanitizeValue($word);
@@ -438,11 +440,11 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 		if($limit != null) { $suggestMessage->setArgumentKeyVal(3, 'LIMIT', $limit); }
 		$response = $this->sendAndAwaitResponse($suggestMessage);
 		if($response->getVerb() != 'PENDING') {
-			throw new SonicCommandFailedException($suggestMessage, $response);
+			throw new CommandFailedException($suggestMessage, $response);
 		}
 		$suggestResult = $this->readResponse();
 		if($suggestResult->getVerb() != 'EVENT' && $suggestResult->getArgument(0) != 'SUGGEST') {
-			throw new SonicCommandFailedException($suggestMessage, $suggestResult);
+			throw new CommandFailedException($suggestMessage, $suggestResult);
 		}
 		return $suggestResult->asArray(2);
 	}
@@ -452,7 +454,7 @@ class SonicSearchSession extends AbstractSonicSessionBase {
 /**
  * Sonic session implementation for Sonic's control mode.
  */
-class SonicControlSession extends AbstractSonicSessionBase {
+class ControlSession extends AbstractSessionBase {
 
 	public function __construct(string $host, int $port, string $password) {
 		parent::__construct($host, $port, $password, 'control');
@@ -461,14 +463,14 @@ class SonicControlSession extends AbstractSonicSessionBase {
 	/**
 	 * Trigger the given action.
 	 * @param action string The action to triger.
-	 * @throws SonicConnectionLostException If the connection to Sonic has been lost in the meantime.
-	 * @throws SonicCommandFailedException If execution of the command failed for which-ever reason.
+	 * @throws ConnectionLostException If the connection to Sonic has been lost in the meantime.
+	 * @throws CommandFailedException If execution of the command failed for which-ever reason.
 	 */
 	public function trigger(string $action) {
 		$triggerMessage = new SonicMessage(['TRIGGER', $action]);
 		$response = $this->sendAndAwaitResponse($triggerMessage);
 		if($response->getVerb() != 'OK') {
-			throw new SonicCommandFailedException($suggestMessage, $suggestResult);
+			throw new CommandFailedException($suggestMessage, $suggestResult);
 		}
 	}
 	
